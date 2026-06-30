@@ -1,0 +1,35 @@
+{
+  "name": "earth-monitor-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.101.2",
+    "lucide-react": "1.22.0",
+    "maplibre-gl": "5.24.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-map-gl": "8.1.1",
+    "recharts": "3.9.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.2",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "jsdom": "28.1.0",
+    "tailwindcss": "4.3.2",
+    "typescript": "6.0.3",
+    "vite": "8.1.1",
+    "vitest": "4.1.9"
+  }
+}
