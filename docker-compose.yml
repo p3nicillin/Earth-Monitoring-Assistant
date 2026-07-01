@@ -1,0 +1,67 @@
+name: earth-monitor
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5-alpine
+    environment:
+      POSTGRES_DB: earth_monitor
+      POSTGRES_USER: earth
+      POSTGRES_PASSWORD: earth
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U earth -d earth_monitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      ENVIRONMENT: development
+      SECRET_KEY: local-compose-secret-replace-before-production
+      DATABASE_URL: postgresql+asyncpg://earth:earth@postgres:5432/earth_monitor
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:8080"]'
+      BOOTSTRAP_LOCAL_WORKSPACE: "true"
+      ALLOW_PUBLIC_REGISTRATION: "true"
+      LOCAL_USER_EMAIL: analyst@terralens.app
+      LOCAL_USER_PASSWORD: LocalAccess123!
+    command: >-
+      sh -c "alembic upgrade head && python -m app.seed &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+    ports:
+      - "127.0.0.1:8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api/v1
+        VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
