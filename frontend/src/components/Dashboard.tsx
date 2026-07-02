@@ -18,6 +18,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Sun,
   TriangleAlert,
 } from "lucide-react";
 import { lazy, useEffect, useMemo, useState } from "react";
@@ -53,6 +54,7 @@ const categoryColors: Record<string, string> = {
 };
 
 const PlanetaryPage = lazy(() => import("./PlanetaryPage"));
+const SolarSystemPage = lazy(() => import("./SolarSystemPage"));
 
 function timeAgo(value: string) {
   const hours = Math.max(1, Math.round((Date.now() - new Date(value).getTime()) / 3_600_000));
@@ -62,6 +64,7 @@ function timeAgo(value: string) {
 type WorkspacePage =
   | "overview"
   | "planet"
+  | "solar"
   | "monitoring"
   | "events"
   | "projects"
@@ -72,7 +75,7 @@ type WorkspacePage =
   | "settings";
 
 const workspacePages = new Set<WorkspacePage>([
-  "overview", "planet", "monitoring", "events", "projects", "imagery", "reports",
+  "overview", "planet", "solar", "monitoring", "events", "projects", "imagery", "reports",
   "assistant", "documentation", "settings",
 ]);
 
@@ -84,6 +87,7 @@ function pageFromHash(): WorkspacePage {
 function WorkspaceContent({ page, projectId, projects }: { page: WorkspacePage; projectId?: string; projects: Project[] }) {
   const props = { projectId, projects };
   if (page === "planet") return <PlanetaryPage {...props} />;
+  if (page === "solar") return <SolarSystemPage />;
   if (page === "monitoring") return <MonitoringPage {...props} />;
   if (page === "events") return <EventsPage {...props} />;
   if (page === "projects") return <ProjectsPage {...props} />;
@@ -143,6 +147,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           <p>WORKSPACE</p>
           <a href="#overview" onClick={() => navigate("overview")} className={activePage === "overview" ? "active" : ""}><MapIcon size={18} />Overview</a>
           <a href="#planet" onClick={() => navigate("planet")} className={activePage === "planet" ? "active" : ""}><Orbit size={18} />Planet 3D<span className="live-nav-dot" /></a>
+          <a href="#solar" onClick={() => navigate("solar")} className={activePage === "solar" ? "active" : ""}><Sun size={18} />Solar System<span className="live-nav-dot" /></a>
           <a href="#monitoring" onClick={() => navigate("monitoring")} className={activePage === "monitoring" ? "active" : ""}><Radar size={18} />Monitoring<span className="nav-badge">{observations.data?.length ?? 0}</span></a>
           <a href="#events" onClick={() => navigate("events")} className={activePage === "events" ? "active" : ""}><TriangleAlert size={18} />Events</a>
           <a href="#projects" onClick={() => navigate("projects")} className={activePage === "projects" ? "active" : ""}><FolderKanban size={18} />Projects</a>

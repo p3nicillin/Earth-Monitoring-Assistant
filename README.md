@@ -24,6 +24,17 @@ React GIS console, monitoring adapters, analysis primitives, tests, and containe
   spacecraft
 - Near-real-time NASA GIBS true colour, cloud, and thermal-anomaly layers plus the USGS all-day
   earthquake feed; every layer names its upstream source
+- Live solar-system monitoring from keyless public feeds: NOAA SWPC space weather (GOES X-ray
+  flux, flare events, solar wind, planetary K-index, protons), JPL SSD close approaches, NASA
+  EONET open natural events, live SDO/SOHO solar imagery, and an in-process planetary ephemeris
+  (JPL approximate Keplerian elements, 1800–2050)
+- Versioned rule-based spot detections — flare classes, NOAA G/S storm scales, solar-wind
+  anomalies, significant earthquakes, lunar-distance NEO gates, and open natural events — with
+  deterministic ids, severity ranking, and per-feed graceful degradation, served over REST and a
+  server-sent-events live stream
+- Solar System operations console: live orrery with planet inspector, multi-wavelength Sun
+  imagery, X-ray/Kp/solar-wind charts, filterable detection feed, close-approach table, and EONET
+  events rendered on the 3D globe
 - Honest monitoring behavior: live STAC items become observations and never become events without
   a separately validated detector
 - Vectorized remote-sensing primitives for 15 documented spectral indices, dNBR, masked change,
@@ -79,7 +90,12 @@ flowchart LR
     STAC --> PC[Planetary Computer]
     API --> ORBITS[CelesTrak OMM]
     API --> HAZARDS[USGS GeoJSON]
+    API --> SOLAR[Solar-system feeds + spot detections]
+    SOLAR --> SWPC[NOAA SWPC]
+    SOLAR --> CNEOS[JPL CNEOS]
+    SOLAR --> EONET[NASA EONET]
     UI --> GIBS[NASA GIBS WMS]
+    UI --> SDO[NASA SDO / SOHO imagery]
     MON --> DB
     DET --> DB
     API --> METRICS[Prometheus metrics]
@@ -179,6 +195,7 @@ All application endpoints live under `/api/v1`.
 | Events | `GET /events`, `GET /events/geojson`, `PATCH /events/{id}/review` | Catalogue, map features, and auditable review decisions |
 | Monitoring | `GET /monitoring/observations`, `POST /monitoring/runs` | Live Sentinel-2 catalogue records and acquisition search |
 | Planetary operations | `GET /planet/satellites`, `GET /planet/earthquakes` | Cached, validated CelesTrak OMM and USGS hazard feeds |
+| Solar system | `GET /solar-system/overview`, `/space-weather`, `/ephemeris`, `/neo`, `/earth-events`, `/detections`, `GET /solar-system/stream` (SSE) | Live heliophysics, planet positions, close approaches, natural events, and rule-based spot detections |
 | Dashboard | `GET /dashboard/summary` | Scoped operational aggregates |
 | Assistant | `POST /assistant/query` | Deterministic natural-language filters |
 | Reports | `GET/POST /reports` | Evidence summaries for selected periods |

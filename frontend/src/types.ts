@@ -201,3 +201,159 @@ export interface EarthquakeFeed {
   count: number;
   earthquakes: EarthquakeFeature[];
 }
+
+export interface PlanetState {
+  name: string;
+  body_class: string;
+  x_au: number;
+  y_au: number;
+  z_au: number;
+  ecliptic_longitude_deg: number;
+  ecliptic_latitude_deg: number;
+  distance_from_sun_au: number;
+  distance_from_earth_au: number;
+  elongation_deg: number;
+  light_time_minutes: number;
+  orbital_period_days: number;
+  radius_km: number;
+  display_color: string;
+}
+
+export interface EphemerisSnapshot {
+  computed_at: string;
+  source: string;
+  valid_range: string;
+  planets: PlanetState[];
+}
+
+export interface XrayFluxPoint {
+  time_tag: string;
+  flux_watts_m2: number;
+}
+
+export interface KpEntry {
+  time_tag: string;
+  kp: number;
+}
+
+export interface SolarWindPoint {
+  time_tag: string;
+  speed_km_s: number | null;
+  density_p_cm3: number | null;
+  bz_nt: number | null;
+  bt_nt: number | null;
+}
+
+export interface FlareEvent {
+  began_at: string | null;
+  peaked_at: string | null;
+  ended_at: string | null;
+  max_class: string | null;
+  in_progress: boolean;
+}
+
+export interface SpaceWeather {
+  source: string;
+  generated_at: string;
+  cache_expires_at: string;
+  xray_flux: XrayFluxPoint[];
+  current_xray_class: string | null;
+  latest_flare: FlareEvent | null;
+  kp_index: KpEntry[];
+  current_kp: number | null;
+  solar_wind: SolarWindPoint[];
+  current_solar_wind: SolarWindPoint | null;
+  proton_flux_10mev_pfu: number | null;
+}
+
+export interface SolarImage {
+  key: string;
+  title: string;
+  description: string;
+  url: string;
+  source: string;
+}
+
+export interface NeoApproach {
+  designation: string;
+  close_approach_at: string;
+  distance_au: number;
+  distance_lunar: number;
+  velocity_km_s: number;
+  absolute_magnitude_h: number | null;
+  estimated_diameter_m: number | null;
+}
+
+export interface NeoFeed {
+  source: string;
+  generated_at: string;
+  cache_expires_at: string;
+  lookahead_days: number;
+  count: number;
+  approaches: NeoApproach[];
+}
+
+export interface EarthEvent {
+  id: string;
+  title: string;
+  category_id: string;
+  category_title: string;
+  longitude: number | null;
+  latitude: number | null;
+  observed_at: string | null;
+  magnitude_value: number | null;
+  magnitude_unit: string | null;
+  source_url: string | null;
+}
+
+export interface EarthEventFeed {
+  source: string;
+  generated_at: string;
+  cache_expires_at: string;
+  lookback_days: number;
+  count: number;
+  events: EarthEvent[];
+}
+
+export type DetectionSeverity = "info" | "watch" | "warning" | "critical";
+export type DetectionBody = "sun" | "earth" | "interplanetary";
+
+export interface SpotDetection {
+  id: string;
+  detector: string;
+  detector_version: string;
+  category: string;
+  severity: DetectionSeverity;
+  body: DetectionBody;
+  title: string;
+  summary: string;
+  observed_at: string;
+  source: string;
+  source_url: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  metrics: Record<string, unknown>;
+}
+
+export interface DetectionFeed {
+  generated_at: string;
+  count: number;
+  detections: SpotDetection[];
+}
+
+export interface FeedStatus {
+  name: string;
+  ok: boolean;
+  detail: string | null;
+}
+
+export interface SolarSystemOverview {
+  generated_at: string;
+  feed_status: FeedStatus[];
+  space_weather: SpaceWeather | null;
+  ephemeris: EphemerisSnapshot;
+  neo: NeoFeed | null;
+  earth_events: EarthEventFeed | null;
+  solar_images: SolarImage[];
+  detections: DetectionFeed;
+}

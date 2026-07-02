@@ -1,6 +1,7 @@
 import type {
   AssistantResult,
   DashboardSummary,
+  EarthEventFeed,
   EarthquakeFeed,
   EventCollection,
   FeatureCollection,
@@ -10,6 +11,7 @@ import type {
   Report,
   SatelliteObservation,
   SatelliteCatalog,
+  SolarSystemOverview,
   TokenResponse,
   User,
   WatchArea,
@@ -140,6 +142,47 @@ export const api = {
     }),
   satelliteCatalog: () => request<SatelliteCatalog>("/planet/satellites"),
   earthquakes: () => request<EarthquakeFeed>("/planet/earthquakes"),
+  solarOverview: () => request<SolarSystemOverview>("/solar-system/overview"),
+  earthEvents: () => request<EarthEventFeed>("/solar-system/earth-events"),
+  streamSolarOverview: async (
+    onOverview: (overview: SolarSystemOverview) => void,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const token = tokenStore.get();
+    const headers = new Headers({ Accept: "text/event-stream" });
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch(`${API_URL}/solar-system/stream`, { headers, signal });
+    if (!response.ok || !response.body) {
+      if (response.status === 401) tokenStore.clear();
+      throw new ApiError(response.status, `Live stream failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let frameEnd = buffer.indexOf("\n\n");
+      while (frameEnd >= 0) {
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        const data = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data: "))
+          .map((line) => line.slice(6))
+          .join("\n");
+        if (data) {
+          try {
+            onOverview(JSON.parse(data) as SolarSystemOverview);
+          } catch {
+            // Skip malformed frames; the next snapshot replaces the state anyway.
+          }
+        }
+        frameEnd = buffer.indexOf("\n\n");
+      }
+    }
+  },
   ask: (question: string, projectId?: string) =>
     request<AssistantResult>("/assistant/query", {
       method: "POST",

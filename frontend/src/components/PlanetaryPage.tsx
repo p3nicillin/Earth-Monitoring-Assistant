@@ -56,7 +56,7 @@ import { json2satrec, type SatRec } from "../lib/satellite";
 
 import { api } from "../lib/api";
 import { nextPass, orbitTrack, propagateState, type GroundPoint, type OrbitalState, type PassEstimate } from "../lib/orbits";
-import type { EarthquakeFeature, Project, SatelliteObservation, TrackedSatellite } from "../types";
+import type { EarthEvent, EarthquakeFeature, Project, SatelliteObservation, TrackedSatellite } from "../types";
 
 interface PlanetaryPageProps {
   projectId?: string;
@@ -68,10 +68,20 @@ interface LayerState {
   footprints: boolean;
   observations: boolean;
   earthquakes: boolean;
+  earthEvents: boolean;
   trueColor: boolean;
   clouds: boolean;
   fires: boolean;
 }
+
+const EONET_COLORS: Record<string, string> = {
+  wildfires: "#fb923c",
+  volcanoes: "#f87171",
+  severeStorms: "#38bdf8",
+  seaLakeIce: "#a5f3fc",
+  floods: "#60a5fa",
+  earthquakes: "#facc15",
+};
 
 interface Telemetry {
   state: OrbitalState;
@@ -82,6 +92,7 @@ interface Telemetry {
 interface GlobeProps {
   satellites: TrackedSatellite[];
   earthquakes: EarthquakeFeature[];
+  earthEvents: EarthEvent[];
   observations: SatelliteObservation[];
   selectedId?: string;
   activeObservation?: SatelliteObservation;
@@ -120,7 +131,7 @@ function geometryBounds(geometry: GeoJSON.Geometry): [number, number, number, nu
   return [Math.min(...longitudes), Math.min(...latitudes), Math.max(...longitudes), Math.max(...latitudes)];
 }
 
-function PlanetaryGlobe({ satellites, earthquakes, observations, selectedId, activeObservation, observer, layers, measureMode, onSelected, onTelemetry, onMeasure }: GlobeProps) {
+function PlanetaryGlobe({ satellites, earthquakes, earthEvents, observations, selectedId, activeObservation, observer, layers, measureMode, onSelected, onTelemetry, onMeasure }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Viewer | null>(null);
   const runtimesRef = useRef(new Map<string, SatelliteRuntime>());
@@ -134,6 +145,7 @@ function PlanetaryGlobe({ satellites, earthquakes, observations, selectedId, act
   const footprintSourceRef = useRef(new CustomDataSource("sensor-footprints"));
   const observationSourceRef = useRef(new CustomDataSource("satellite-observations"));
   const earthquakeSourceRef = useRef(new CustomDataSource("earthquakes"));
+  const earthEventSourceRef = useRef(new CustomDataSource("earth-events"));
   const measurementSourceRef = useRef(new CustomDataSource("measurements"));
 
   useEffect(() => { onSelectedRef.current = onSelected; }, [onSelected]);
@@ -181,7 +193,7 @@ function PlanetaryGlobe({ satellites, earthquakes, observations, selectedId, act
     viewer.clock.multiplier = 60;
     viewer.timeline.zoomTo(viewer.clock.startTime, viewer.clock.stopTime);
     viewer.camera.flyTo({ destination: Cartesian3.fromDegrees(-10, 25, 19_000_000), duration: 0 });
-    for (const source of [satelliteSourceRef.current, trackSourceRef.current, footprintSourceRef.current, observationSourceRef.current, earthquakeSourceRef.current, measurementSourceRef.current]) {
+    for (const source of [satelliteSourceRef.current, trackSourceRef.current, footprintSourceRef.current, observationSourceRef.current, earthquakeSourceRef.current, earthEventSourceRef.current, measurementSourceRef.current]) {
       void viewer.dataSources.add(source);
     }
     const removeSelection = viewer.selectedEntityChanged.addEventListener((entity: Entity | undefined) => {
@@ -268,9 +280,26 @@ function PlanetaryGlobe({ satellites, earthquakes, observations, selectedId, act
   }, [earthquakes]);
 
   useEffect(() => {
+    const source = earthEventSourceRef.current;
+    source.entities.removeAll();
+    for (const event of earthEvents) {
+      if (event.longitude === null || event.latitude === null) continue;
+      const color = Color.fromCssColorString(EONET_COLORS[event.category_id] ?? "#a3a3a3");
+      source.entities.add({
+        id: `earth-event:${event.id}`,
+        name: event.title,
+        position: Cartesian3.fromDegrees(event.longitude, event.latitude, 0),
+        point: { pixelSize: 7, color, outlineColor: Color.BLACK.withAlpha(0.7), outlineWidth: 1, distanceDisplayCondition: new DistanceDisplayCondition(0, 4e7) },
+        label: { text: `${event.category_title}: ${event.title}`, font: "9px Inter, sans-serif", fillColor: color, showBackground: true, backgroundColor: Color.BLACK.withAlpha(0.6), verticalOrigin: VerticalOrigin.BOTTOM, horizontalOrigin: HorizontalOrigin.LEFT, pixelOffset: new Cartesian2(7, -7), distanceDisplayCondition: new DistanceDisplayCondition(0, 6.5e6) },
+      });
+    }
+  }, [earthEvents]);
+
+  useEffect(() => {
     footprintSourceRef.current.show = layers.footprints;
     observationSourceRef.current.show = layers.observations;
     earthquakeSourceRef.current.show = layers.earthquakes;
+    earthEventSourceRef.current.show = layers.earthEvents;
     trackSourceRef.current.show = layers.tracks;
   }, [layers]);
 
@@ -376,9 +405,10 @@ export default function PlanetaryPage({ projectId, projects }: PlanetaryPageProp
   const [measurement, setMeasurement] = useState<number | null>(null);
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [activeObservationId, setActiveObservationId] = useState<string>();
-  const [layers, setLayers] = useState<LayerState>({ tracks: true, footprints: false, observations: true, earthquakes: true, trueColor: true, clouds: false, fires: false });
+  const [layers, setLayers] = useState<LayerState>({ tracks: true, footprints: false, observations: true, earthquakes: true, earthEvents: true, trueColor: true, clouds: false, fires: false });
   const catalog = useQuery({ queryKey: ["satellite-catalog"], queryFn: api.satelliteCatalog, staleTime: 7_200_000, refetchInterval: 7_200_000 });
   const hazards = useQuery({ queryKey: ["earthquakes"], queryFn: api.earthquakes, staleTime: 60_000, refetchInterval: 60_000 });
+  const earthEvents = useQuery({ queryKey: ["earth-events"], queryFn: api.earthEvents, staleTime: 300_000, refetchInterval: 300_000 });
   const observations = useQuery({ queryKey: ["observations", projectId], queryFn: () => api.observations(projectId), refetchInterval: 300_000 });
   const areaProjectIds = projectId ? [projectId] : projects.map((project) => project.id);
   const watchAreas = useQuery({ queryKey: ["planet-watch-areas", areaProjectIds], queryFn: async () => (await Promise.all(areaProjectIds.map(api.watchAreas))).flat(), enabled: areaProjectIds.length > 0 });
@@ -416,7 +446,7 @@ export default function PlanetaryPage({ projectId, projects }: PlanetaryPageProp
           <div className="mission-list">{filtered.map((satellite) => <button className={selectedId === satellite.id ? "selected" : ""} key={satellite.id} onClick={() => setSelectedId(satellite.id)}><i style={{ background: satellite.profile.color }} /><span><strong>{satellite.name}</strong><small>{satellite.profile.family} · NORAD {satellite.norad_catalog_id}</small></span><Orbit size={14} /></button>)}</div>
         </aside>
         <div className="globe-stage">
-          <PlanetaryGlobe satellites={satellites} earthquakes={hazards.data?.earthquakes ?? []} observations={observations.data ?? []} selectedId={selectedId} activeObservation={activeObservation} observer={observer} layers={layers} measureMode={measureMode} onSelected={setSelectedId} onTelemetry={setTelemetry} onMeasure={setMeasurement} />
+          <PlanetaryGlobe satellites={satellites} earthquakes={hazards.data?.earthquakes ?? []} earthEvents={earthEvents.data?.events ?? []} observations={observations.data ?? []} selectedId={selectedId} activeObservation={activeObservation} observer={observer} layers={layers} measureMode={measureMode} onSelected={setSelectedId} onTelemetry={setTelemetry} onMeasure={setMeasurement} />
           <div className="globe-status"><span><i /> LIVE ORBIT PROPAGATION</span><span>{telemetry?.time.toLocaleString() ?? "Synchronizing clock…"}</span></div>
           <div className="globe-tools"><button className={measureMode ? "active" : ""} onClick={() => setMeasureMode((value) => !value)} title="Measure geodesic distance"><Ruler size={16} /></button><button onClick={() => setActiveObservationId(undefined)} title="Clear imagery overlay"><X size={16} /></button></div>
           {measureMode && <div className="measure-readout">{measurement == null ? "Click two globe positions" : `${measurement.toFixed(1)} km geodesic`}</div>}
@@ -431,7 +461,7 @@ export default function PlanetaryPage({ projectId, projects }: PlanetaryPageProp
             <section className="inspector-section"><span>AVAILABLE ACQUISITIONS</span>{relatedObservations.slice(0, 4).map((observation) => <button className={activeObservationId === observation.id ? "acquisition active" : "acquisition"} key={observation.id} onClick={() => setActiveObservationId(observation.id)}><Play size={12} /><span><strong>{new Date(observation.captured_at).toLocaleDateString()}</strong><small>{observation.cloud_cover?.toFixed(1) ?? "?"}% cloud · overlay preview</small></span></button>)}{relatedObservations.length === 0 && <p>No stored imagery currently matches this spacecraft.</p>}</section>
           </> : <div className="inspector-empty"><Globe2 size={28} /><h2>Select a spacecraft</h2><p>Inspect propagated state, instruments, swath, pass prediction, and matching acquisitions.</p></div>}
         </aside>
-        <div className="layer-deck"><header><Layers3 size={15} />Operational layers</header><button className={layers.tracks ? "active" : ""} onClick={() => toggleLayer("tracks")}><Orbit />Orbit and swath</button><button className={layers.footprints ? "active" : ""} onClick={() => toggleLayer("footprints")}><Radar />Sensor footprints</button><button className={layers.observations ? "active" : ""} onClick={() => toggleLayer("observations")}><ImageIcon />STAC observations</button><button className={layers.earthquakes ? "active" : ""} onClick={() => toggleLayer("earthquakes")}><Activity />USGS earthquakes</button>{LIVE_LAYERS.map(({ key, label, icon: Icon }) => <button className={layers[key] ? "active" : ""} onClick={() => toggleLayer(key)} key={key}><Icon />{label}</button>)}</div>
+        <div className="layer-deck"><header><Layers3 size={15} />Operational layers</header><button className={layers.tracks ? "active" : ""} onClick={() => toggleLayer("tracks")}><Orbit />Orbit and swath</button><button className={layers.footprints ? "active" : ""} onClick={() => toggleLayer("footprints")}><Radar />Sensor footprints</button><button className={layers.observations ? "active" : ""} onClick={() => toggleLayer("observations")}><ImageIcon />STAC observations</button><button className={layers.earthquakes ? "active" : ""} onClick={() => toggleLayer("earthquakes")}><Activity />USGS earthquakes</button><button className={layers.earthEvents ? "active" : ""} onClick={() => toggleLayer("earthEvents")}><Flame />EONET natural events</button>{LIVE_LAYERS.map(({ key, label, icon: Icon }) => <button className={layers[key] ? "active" : ""} onClick={() => toggleLayer(key)} key={key}><Icon />{label}</button>)}</div>
       </div>
       {(catalog.isError || hazards.isError) && <div className="connection-error">One or more live planetary feeds are unavailable. Cached layers remain visible where available.</div>}
     </section>

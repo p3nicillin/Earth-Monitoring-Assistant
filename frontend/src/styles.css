@@ -222,3 +222,71 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 560px) {
   .login-panel { padding: 28px; }.login-footer { position: static; margin-top: 50px; text-align: center; }.dashboard-heading h1 { font-size: 23px; }.stat-grid { grid-template-columns: 1fr 1fr; gap: 8px; }.stat-grid article { min-height: 110px; padding: 14px; }.stat-grid article > strong { font-size: 25px; }.stat-icon { width: 27px; height: 27px; top: 12px; right: 12px; }.project-switcher select { width: 145px; }.topbar { padding: 0 12px; }.map-wrap { height: 360px; }.map-card { min-height: 425px; }.assistant-teaser { align-items: flex-start; padding: 24px 18px; }.assistant-orb { width: 42px; height: 42px; margin-right: 12px; }.assistant-teaser > button { position: absolute; z-index: 2; left: 70px; bottom: 25px; margin: 0; }.chart-body { flex-direction: column; }.donut-wrap { width: 100%; }.chart-legend { width: 100%; padding: 0 20px 15px; }
 }
+
+/* Solar system operations */
+.dashboard-content:has(.solar-page) { width: 100%; max-width: none; padding: 22px; }
+.solar-page { display: grid; gap: 15px; }
+.planetary-source > i.polling { background: #facc15; box-shadow: 0 0 9px rgba(250,204,21,.75); }
+.solar-stats { grid-template-columns: repeat(5, 1fr); }
+.solar-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 13px; }
+.orrery-panel { grid-column: span 8; }
+.sun-panel { grid-column: span 4; display: grid; grid-template-rows: auto 1fr auto auto; }
+.detections-panel { grid-column: span 4; }
+.chart-panel { grid-column: span 4; padding-bottom: 8px; }
+.neo-panel { grid-column: span 7; }
+.earth-events-panel { grid-column: span 5; }
+.orrery-stage { position: relative; padding: 6px; }
+.orrery { display: block; width: 100%; max-height: 620px; }
+.orrery-orbit { fill: none; stroke: rgba(151,185,174,.14); stroke-width: 1; }
+.orrery-planet { cursor: pointer; }
+.orrery-planet text { fill: #7f9990; font-size: 11px; }
+.orrery-planet:hover text, .orrery-planet.selected text { fill: #d0e0da; }
+.planet-inspector { position: absolute; top: 14px; right: 14px; width: 200px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: rgba(7,18,15,.92); backdrop-filter: blur(10px); }
+.planet-inspector h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 2px; font-size: 12px; }
+.planet-inspector > small { color: #526d63; font-size: 7px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+.planet-inspector dl { display: grid; gap: 5px; margin: 10px 0 0; }
+.planet-inspector dl > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.planet-inspector dt { color: #5b736a; font-size: 8px; }
+.planet-inspector dd { margin: 0; color: #a9bdb5; font-size: 8px; text-align: right; }
+.sun-image-wrap { display: grid; place-items: center; padding: 10px; background: #050c0a; }
+.sun-image-wrap img { width: 100%; max-width: 330px; border-radius: 50%; box-shadow: 0 0 42px rgba(245,158,11,.14); }
+.sun-caption { margin: 0; padding: 8px 14px 0; color: #657d74; font-size: 8px; line-height: 1.5; }
+.sun-tabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 12px 12px; }
+.sun-tabs button { height: 25px; padding: 0 8px; border: 1px solid rgba(151,185,174,.11); border-radius: 4px; color: #607970; background: rgba(14,30,24,.75); font-size: 7px; cursor: pointer; }
+.sun-tabs button.active { color: #ffd58a; border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.08); }
+.body-filter { display: flex; gap: 4px; }
+.body-filter button { height: 24px; padding: 0 8px; border: 1px solid rgba(151,185,174,.11); border-radius: 4px; color: #607970; background: rgba(14,30,24,.75); font-size: 7px; cursor: pointer; }
+.body-filter button.active { color: #9aeab4; border-color: rgba(74,222,128,.27); background: rgba(74,222,128,.085); }
+.detection-list { max-height: 560px; overflow: auto; scrollbar-width: thin; scrollbar-color: #1e4034 transparent; }
+.detection-row { display: flex; gap: 9px; padding: 10px 13px; border-bottom: 1px solid rgba(151,185,174,.07); }
+.detection-icon { display: grid; place-items: center; flex: 0 0 auto; width: 28px; height: 28px; border: 1px solid currentColor; border-radius: 7px; background: rgba(255,255,255,.02); }
+.detection-row > div { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.detection-row strong { color: #c4d7cf; font-size: 9px; }
+.detection-row p { margin: 0; color: #657d74; font-size: 8px; line-height: 1.45; }
+.detection-row small { color: #4f685f; font-size: 7px; }
+.detection-severity { flex: 0 0 auto; width: 6px; height: 6px; margin-top: 4px; border-radius: 50%; box-shadow: 0 0 7px currentColor; }
+.chart-panel .recharts-wrapper { font-size: 8px; }
+.chart-panel .recharts-default-tooltip { border-radius: 6px; background: #0d1916 !important; border-color: var(--line) !important; font-size: 9px; }
+.neo-table-wrap { overflow: auto; }
+.neo-table { width: 100%; border-collapse: collapse; }
+.neo-table th { padding: 8px 13px; border-bottom: 1px solid var(--line); color: #526a61; font-size: 7px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; text-align: left; }
+.neo-table td { padding: 8px 13px; border-bottom: 1px solid rgba(151,185,174,.07); color: #9db4ab; font-size: 9px; }
+.neo-table tr.close td { color: #ffd58a; }
+.earth-event-groups { display: flex; flex-wrap: wrap; gap: 9px; padding: 13px; }
+.earth-event-groups > div { display: grid; gap: 2px; min-width: 92px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.015); }
+.earth-event-groups strong { color: #d0e0da; font-size: 15px; }
+.earth-event-groups span { color: #526a61; font-size: 7px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; }
+.globe-link { display: flex; align-items: center; gap: 5px; color: #67e8f9; font-size: 8px; text-decoration: none; }
+
+@media (max-width: 1500px) {
+  .orrery-panel { grid-column: span 12; }
+  .sun-panel, .detections-panel { grid-column: span 6; }
+  .chart-panel { grid-column: span 4; }
+  .neo-panel { grid-column: span 7; }
+  .earth-events-panel { grid-column: span 5; }
+}
+@media (max-width: 1000px) {
+  .solar-stats { grid-template-columns: 1fr 1fr; }
+  .sun-panel, .detections-panel, .chart-panel, .neo-panel, .earth-events-panel { grid-column: span 12; }
+  .planet-inspector { position: static; width: auto; margin-top: 8px; }
+}

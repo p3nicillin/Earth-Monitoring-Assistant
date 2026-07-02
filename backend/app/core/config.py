@@ -37,6 +37,16 @@ class Settings(BaseSettings):
         "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
     )
     hazard_cache_seconds: int = 60
+    swpc_base_url: str = "https://services.swpc.noaa.gov"
+    cad_api_url: str = "https://ssd-api.jpl.nasa.gov/cad.api"
+    eonet_events_url: str = "https://eonet.gsfc.nasa.gov/api/v3/events"
+    space_weather_cache_seconds: int = 60
+    neo_cache_seconds: int = 3600
+    earth_events_cache_seconds: int = 300
+    neo_lookahead_days: int = 7
+    neo_max_distance_au: float = 0.05
+    earth_events_lookback_days: int = 14
+    solar_stream_interval_seconds: int = 30
     request_timeout_seconds: float = 20.0
     provider_max_attempts: int = 3
     provider_backoff_seconds: float = 0.25

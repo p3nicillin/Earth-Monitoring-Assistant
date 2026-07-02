@@ -9,7 +9,17 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api import assistant, auth, dashboard, events, monitoring, planetary, projects, reports
+from app.api import (
+    assistant,
+    auth,
+    dashboard,
+    events,
+    monitoring,
+    planetary,
+    projects,
+    reports,
+    solar_system,
+)
 from app.core.config import get_settings
 from app.core.database import Base, SessionFactory, engine
 from app.middleware import (
@@ -64,6 +74,7 @@ for router in (
     events.router,
     monitoring.router,
     planetary.router,
+    solar_system.router,
     dashboard.router,
     assistant.router,
     reports.router,

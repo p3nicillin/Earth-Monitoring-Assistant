@@ -38,6 +38,24 @@ Live catalogue ingestion never invokes a detector. A production detector must ex
 immutable version, validate required bands/quality assets, and return evidence sufficient to
 reproduce or review the output.
 
+### Solar-system live feeds and spot detections
+
+The solar-system module aggregates keyless public feeds — NOAA SWPC space weather (GOES X-ray
+flux, flare events, solar-wind plasma/IMF, planetary K-index, integral protons), JPL SSD/CNEOS
+close-approach data, NASA EONET open natural events, USGS earthquakes, and live SDO/SOHO solar
+imagery URLs — plus an in-process planetary ephemeris derived from the JPL approximate Keplerian
+elements (valid 1800–2050, arcminute-class accuracy; situational awareness, not navigation).
+
+Every upstream fetch is retried with backoff and cached in process memory with a feed-specific
+TTL, so the SSE stream and many concurrent dashboards do not multiply provider load. One failing
+feed degrades the overview (`feed_status`) instead of failing the request. Spot detections are
+pure, versioned rules over the normalized feeds (NOAA R/G/S scale mappings, magnitude/recency
+thresholds, lunar-distance NEO gates) with deterministic identifiers so clients can deduplicate
+across refreshes. Stale solar-wind readings are excluded from "current" state and therefore
+cannot trigger anomaly detections. These detections signal operating conditions from authoritative
+sources; they are distinct from the imagery detector contract above and are never persisted as
+reviewable events.
+
 ## Data lifecycle
 
 ```mermaid
