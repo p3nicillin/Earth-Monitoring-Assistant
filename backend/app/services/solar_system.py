@@ -134,21 +134,40 @@ class SolarSystemService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    async def _fetch_or_none(self, url: str, ttl: float) -> Any:
+        """One flaky SWPC product must degrade its section, not all space weather."""
+        try:
+            return await fetch_json_cached(self.settings, url, ttl)
+        except FeedError:
+            logger.warning("Space weather sub-feed unavailable: %s", url)
+            return None
+
+    async def _fetch_solar_wind_product(self, kind: str, ttl: float) -> Any:
+        """SWPC windowed product files intermittently 404 or serve header-only."""
+        base = self.settings.swpc_base_url.rstrip("/")
+        for window in ("3-day", "7-day"):
+            payload = await self._fetch_or_none(
+                f"{base}/products/solar-wind/{kind}-{window}.json", ttl
+            )
+            if payload is not None and self._product_rows(payload):
+                return payload
+        return None
+
     async def space_weather(self) -> SpaceWeather:
         base = self.settings.swpc_base_url.rstrip("/")
         ttl = self.settings.space_weather_cache_seconds
         xray_raw, flare_raw, plasma_raw, mag_raw, kp_raw, proton_raw = await asyncio.gather(
-            fetch_json_cached(self.settings, f"{base}/json/goes/primary/xrays-6-hour.json", ttl),
-            fetch_json_cached(
-                self.settings, f"{base}/json/goes/primary/xray-flares-latest.json", ttl
-            ),
-            fetch_json_cached(self.settings, f"{base}/products/solar-wind/plasma-3-day.json", ttl),
-            fetch_json_cached(self.settings, f"{base}/products/solar-wind/mag-3-day.json", ttl),
-            fetch_json_cached(self.settings, f"{base}/products/noaa-planetary-k-index.json", ttl),
-            fetch_json_cached(
-                self.settings, f"{base}/json/goes/primary/integral-protons-1-day.json", ttl
-            ),
+            self._fetch_or_none(f"{base}/json/goes/primary/xrays-6-hour.json", ttl),
+            self._fetch_or_none(f"{base}/json/goes/primary/xray-flares-latest.json", ttl),
+            self._fetch_solar_wind_product("plasma", ttl),
+            self._fetch_solar_wind_product("mag", ttl),
+            self._fetch_or_none(f"{base}/products/noaa-planetary-k-index.json", ttl),
+            self._fetch_or_none(f"{base}/json/goes/primary/integral-protons-1-day.json", ttl),
         )
+        if all(
+            raw is None for raw in (xray_raw, flare_raw, plasma_raw, mag_raw, kp_raw, proton_raw)
+        ):
+            raise FeedError("All SWPC space weather feeds are unavailable")
         xray_flux = self._normalize_xray(xray_raw)
         kp_index = self._normalize_kp(kp_raw)
         solar_wind = self._normalize_solar_wind(plasma_raw, mag_raw)

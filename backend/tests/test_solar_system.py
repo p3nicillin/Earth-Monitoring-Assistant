@@ -157,6 +157,62 @@ def test_space_weather_normalization(monkeypatch: pytest.MonkeyPatch) -> None:
     assert weather.proton_flux_10mev_pfu == 12.0
 
 
+def test_solar_wind_falls_back_to_seven_day_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        solar_system_module,
+        "fetch_json_cached",
+        fake_fetcher(
+            {
+                "plasma-3-day": FeedError("404"),
+                "mag-3-day": FeedError("404"),
+                "plasma-7-day": PLASMA_PAYLOAD,
+                "mag-7-day": MAG_PAYLOAD,
+            }
+        ),
+    )
+    weather = asyncio.run(SolarSystemService(SETTINGS).space_weather())
+    assert weather.current_solar_wind is not None
+    assert weather.current_solar_wind.speed_km_s == 642.0
+
+
+def test_one_failing_subfeed_degrades_only_its_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        solar_system_module,
+        "fetch_json_cached",
+        fake_fetcher({"integral-protons": FeedError("outage")}),
+    )
+    weather = asyncio.run(SolarSystemService(SETTINGS).space_weather())
+    assert weather.proton_flux_10mev_pfu is None
+    assert weather.current_xray_class == "M6.2"
+    assert weather.current_kp == 5.33
+
+
+def test_space_weather_raises_only_when_every_subfeed_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outage = FeedError("total outage")
+    monkeypatch.setattr(
+        solar_system_module,
+        "fetch_json_cached",
+        fake_fetcher(
+            {
+                "xrays-6-hour": outage,
+                "xray-flares-latest": outage,
+                "plasma-3-day": outage,
+                "mag-3-day": outage,
+                "plasma-7-day": outage,
+                "mag-7-day": outage,
+                "planetary-k-index": outage,
+                "integral-protons": outage,
+            }
+        ),
+    )
+    with pytest.raises(FeedError):
+        asyncio.run(SolarSystemService(SETTINGS).space_weather())
+
+
 def test_kp_normalization_accepts_header_row_table(monkeypatch: pytest.MonkeyPatch) -> None:
     table = [
         ["time_tag", "Kp", "a_running", "station_count"],
