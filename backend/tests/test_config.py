@@ -5,7 +5,13 @@ from app.core.config import Settings
 
 
 def test_production_rejects_development_secret() -> None:
-    settings = Settings(environment="production", bootstrap_local_workspace=False)
+    # Explicit dev-style secret: CI exports SECRET_KEY, which would otherwise
+    # override the default and make this test pass or fail by environment.
+    settings = Settings(
+        environment="production",
+        secret_key="development-secret-change-before-production",
+        bootstrap_local_workspace=False,
+    )
     with pytest.raises(RuntimeError, match="unique SECRET_KEY"):
         settings.assert_safe_for_production()
 
