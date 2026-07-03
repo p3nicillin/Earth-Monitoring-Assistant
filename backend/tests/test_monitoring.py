@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -9,7 +10,13 @@ from pydantic import ValidationError
 from app.acquisition import providers
 from app.acquisition.models import SearchRequest
 from app.acquisition.providers import PlanetaryComputerProvider
+from app.analysis.raster_io import RasterReadError
+from app.core.config import Settings
+from app.detectors.base import DetectionResult, DetectorContext
+from app.models.entities import EventCategory, Observation, Severity, WatchArea
 from app.schemas.api import MonitoringRequest
+from app.services import monitoring as monitoring_module
+from app.services.monitoring import MonitoringService
 
 POLYGON = {
     "type": "Polygon",
@@ -159,3 +166,198 @@ def test_monitoring_request_only_accepts_live_provider() -> None:
             watch_area_id="7e94c166-b673-4022-a9b3-a43652cf271e",
             provider="unsupported",  # type: ignore[arg-type]
         )
+
+
+# --- Detector wiring in MonitoringService._run_detectors -----------------------
+#
+# No test in this suite spins up a real database session (everything else mocks
+# at the HTTP/provider boundary), so this follows the same convention: a minimal
+# fake AsyncSession that resolves `select(Observation)` / `select(Event)` queries
+# by inspecting the selected entity, rather than introducing a new DB fixture.
+
+
+class _ScalarsResult:
+    def __init__(self, items: list[Any]) -> None:
+        self._items = list(items)
+
+    def all(self) -> list[Any]:
+        return self._items
+
+    def __iter__(self) -> Any:
+        return iter(self._items)
+
+
+class _FakeSession:
+    def __init__(
+        self, *, recent_observations: list[Observation], existing_events: list[Any] | None = None
+    ) -> None:
+        self._recent_observations = recent_observations
+        self._existing_events = existing_events or []
+        self.added: list[Any] = []
+
+    async def scalars(self, stmt: Any) -> _ScalarsResult:
+        from app.models.entities import Event  # local import avoids a module-level cycle in tests
+
+        entity = stmt.column_descriptions[0]["entity"]
+        if entity is Observation:
+            return _ScalarsResult(self._recent_observations)
+        if entity is Event:
+            created_events = [item for item in self.added if isinstance(item, Event)]
+            return _ScalarsResult([*self._existing_events, *created_events])
+        raise AssertionError(f"Unexpected query target: {entity}")
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def flush(self) -> None:
+        return None
+
+
+def _make_watch_area() -> WatchArea:
+    return WatchArea(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        name="Test Watch Area",
+        geometry=POLYGON,
+        categories=["environment"],
+        schedule="daily",
+        is_active=True,
+    )
+
+
+def _make_observation(*, captured_at: datetime, cloud_cover: float = 5.0) -> Observation:
+    return Observation(
+        id=uuid.uuid4(),
+        source="sentinel-2-l2a",
+        source_item_id=f"item-{captured_at.isoformat()}",
+        captured_at=captured_at,
+        cloud_cover=cloud_cover,
+        assets={"B04": {"href": "https://x/b04.tif"}, "B08": {"href": "https://x/b08.tif"}},
+        metadata_json={},
+    )
+
+
+def _flagged_result(observation_id: uuid.UUID) -> DetectionResult:
+    return DetectionResult(
+        flagged=True,
+        title="Vegetation change detected",
+        summary="synthetic test detection",
+        event_type="vegetation_burn_change",
+        category=EventCategory.environment,
+        severity=Severity.high,
+        confidence=0.9,
+        geometry=POLYGON,
+        area_sq_km=12.3,
+        evidence={"before_item_id": "before-1", "after_item_id": "after-1"},
+        observation_id=observation_id,
+    )
+
+
+class _StubDetector:
+    name = "stub-detector"
+    version = "1.0.0"
+
+    def __init__(
+        self, results: list[DetectionResult] | None = None, error: Exception | None = None
+    ) -> None:
+        self._results = results or []
+        self._error = error
+        self.call_count = 0
+
+    async def detect(self, context: DetectorContext) -> list[DetectionResult]:
+        self.call_count += 1
+        if self._error is not None:
+            raise self._error
+        return self._results
+
+
+def _settings() -> Settings:
+    return Settings(secret_key="x" * 32)
+
+
+def test_run_detectors_creates_event_for_flagged_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _make_watch_area()
+    observation = _make_observation(captured_at=datetime(2026, 1, 10, tzinfo=UTC))
+    detector = _StubDetector(results=[_flagged_result(observation.id)])
+    monkeypatch.setattr(monitoring_module, "DETECTORS", [detector])
+    session = _FakeSession(recent_observations=[observation])
+    service = MonitoringService(session, _settings())  # type: ignore[arg-type]
+
+    events_created = asyncio.run(service._run_detectors(area, POLYGON))
+
+    assert events_created == 1
+    assert detector.call_count == 1
+    assert len(session.added) == 1
+    created = session.added[0]
+    assert created.project_id == area.project_id
+    assert created.detector_name == "stub-detector"
+    assert created.evidence["before_item_id"] == "before-1"
+
+
+def test_run_detectors_ignores_unflagged_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _make_watch_area()
+    observation = _make_observation(captured_at=datetime(2026, 1, 10, tzinfo=UTC))
+    unflagged = DetectionResult(
+        flagged=False,
+        title="",
+        summary="",
+        event_type="vegetation_burn_change",
+        category=EventCategory.environment,
+        severity=Severity.low,
+        confidence=0.0,
+        geometry=POLYGON,
+        area_sq_km=None,
+        evidence={},
+        observation_id=observation.id,
+    )
+    monkeypatch.setattr(monitoring_module, "DETECTORS", [_StubDetector(results=[unflagged])])
+    session = _FakeSession(recent_observations=[observation])
+    service = MonitoringService(session, _settings())  # type: ignore[arg-type]
+
+    events_created = asyncio.run(service._run_detectors(area, POLYGON))
+
+    assert events_created == 0
+    assert session.added == []
+
+
+def test_run_detectors_swallows_raster_read_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _make_watch_area()
+    observation = _make_observation(captured_at=datetime(2026, 1, 10, tzinfo=UTC))
+    detector = _StubDetector(error=RasterReadError("signing failed"))
+    monkeypatch.setattr(monitoring_module, "DETECTORS", [detector])
+    session = _FakeSession(recent_observations=[observation])
+    service = MonitoringService(session, _settings())  # type: ignore[arg-type]
+
+    events_created = asyncio.run(service._run_detectors(area, POLYGON))
+
+    assert events_created == 0
+    assert session.added == []
+
+
+def test_run_detectors_returns_zero_with_no_observations(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _make_watch_area()
+    detector = _StubDetector(results=[])
+    monkeypatch.setattr(monitoring_module, "DETECTORS", [detector])
+    session = _FakeSession(recent_observations=[])
+    service = MonitoringService(session, _settings())  # type: ignore[arg-type]
+
+    events_created = asyncio.run(service._run_detectors(area, POLYGON))
+
+    assert events_created == 0
+    assert detector.call_count == 0  # short-circuits before invoking any detector
+
+
+def test_run_detectors_is_idempotent_for_the_same_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    area = _make_watch_area()
+    observation = _make_observation(captured_at=datetime(2026, 1, 10, tzinfo=UTC))
+    detector = _StubDetector(results=[_flagged_result(observation.id)])
+    monkeypatch.setattr(monitoring_module, "DETECTORS", [detector])
+    session = _FakeSession(recent_observations=[observation])
+    service = MonitoringService(session, _settings())  # type: ignore[arg-type]
+
+    first_run = asyncio.run(service._run_detectors(area, POLYGON))
+    second_run = asyncio.run(service._run_detectors(area, POLYGON))
+
+    assert first_run == 1
+    assert second_run == 0
+    assert len(session.added) == 1

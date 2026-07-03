@@ -13,6 +13,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.config import Settings
+from app.learning.anomalies import detect_adaptive_anomalies
+from app.schemas.insights import MetricBaseline
 from app.schemas.planetary import EarthquakeFeed
 from app.schemas.solar_system import (
     DetectionFeed,
@@ -236,7 +238,7 @@ class SolarSystemService:
     def ephemeris(self, moment: datetime | None = None) -> EphemerisSnapshot:
         return compute_ephemeris(moment)
 
-    async def overview(self) -> SolarSystemOverview:
+    async def overview(self, baselines: list[MetricBaseline] | None = None) -> SolarSystemOverview:
         planetary = PlanetaryOperationsService(self.settings)
         results = await asyncio.gather(
             self.space_weather(),
@@ -264,6 +266,13 @@ class SolarSystemService:
         earth_events: EarthEventFeed | None = values[3]
         now = datetime.now(UTC)
         detections = spot_detections.run_all_detectors(weather, earthquakes, neo, earth_events)
+        if weather is not None and baselines:
+            adaptive = detect_adaptive_anomalies(weather, baselines)
+            if adaptive:
+                existing_ids = {detection.id for detection in detections}
+                detections.extend(item for item in adaptive if item.id not in existing_ids)
+                detections.sort(key=lambda item: item.observed_at, reverse=True)
+                detections.sort(key=lambda item: spot_detections.SEVERITY_RANK[item.severity])
         return SolarSystemOverview(
             generated_at=now,
             feed_status=feed_status,

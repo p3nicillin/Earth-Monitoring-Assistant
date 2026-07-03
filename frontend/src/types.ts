@@ -347,6 +347,102 @@ export interface FeedStatus {
   detail: string | null;
 }
 
+export interface MetricBaseline {
+  metric: string;
+  title: string;
+  unit: string;
+  direction: "high" | "low";
+  sample_count: number;
+  window_days: number;
+  first_sample_at: string | null;
+  last_sample_at: string | null;
+  mean: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  observed_extreme: number | null;
+  published_floor: number;
+  adaptive_threshold: number | null;
+  maturity: number;
+}
+
+export interface ForecastPoint {
+  metric: string;
+  model_name: string;
+  model_version: string;
+  made_at: string;
+  target_time: string;
+  horizon_minutes: number;
+  predicted_value: number;
+  actual_value: number | null;
+  abs_error: number | null;
+}
+
+export interface ForecastSkill {
+  metric: string;
+  model_name: string;
+  horizon_minutes: number;
+  resolved_count: number;
+  mean_abs_error: number;
+  skill_vs_persistence: number | null;
+}
+
+export interface MetricArchiveStatus {
+  metric: string;
+  title: string;
+  sample_count: number;
+  first_sample_at: string | null;
+  last_sample_at: string | null;
+}
+
+export interface LearningStatus {
+  generated_at: string;
+  learning_enabled: boolean;
+  interval_seconds: number;
+  baseline_window_days: number;
+  min_baseline_samples: number;
+  archive: MetricArchiveStatus[];
+  total_samples: number;
+  forecasts_pending: number;
+  forecasts_resolved: number;
+  skill: ForecastSkill[];
+}
+
+export interface ForecastFeed {
+  generated_at: string;
+  upcoming: ForecastPoint[];
+  recent_resolved: ForecastPoint[];
+}
+
+export interface ImageryCapture {
+  id: string;
+  source_key: string;
+  title: string;
+  source: string;
+  upstream_url: string;
+  captured_at: string;
+  content_hash: string;
+  byte_size: number;
+  content_type: string;
+  metadata_json: Record<string, unknown>;
+}
+
+export interface ImagerySourceStatus {
+  key: string;
+  title: string;
+  source: string;
+  description: string;
+  capture_count: number;
+  latest_captured_at: string | null;
+  latest_capture_id: string | null;
+}
+
+export interface ImageryGallery {
+  generated_at: string;
+  total: number;
+  items: ImageryCapture[];
+}
+
 export interface SolarSystemOverview {
   generated_at: string;
   feed_status: FeedStatus[];

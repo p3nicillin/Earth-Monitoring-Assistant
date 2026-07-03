@@ -117,6 +117,14 @@ const LIVE_LAYERS = [
   { key: "fires" as const, label: "VIIRS thermal anomalies", icon: Flame, layer: "VIIRS_SNPP_Thermal_Anomalies_375m_All", alpha: 0.88 },
 ];
 
+// External feeds (STAC, EONET, USGS) occasionally carry longitudes outside
+// [-180, 180] (antimeridian-crossing footprints, unwrapped bboxes). Cesium's
+// Rectangle/Cartesian APIs throw a RangeError and halt the whole render loop
+// on such values, so every raw coordinate is normalized before it reaches Cesium.
+function normalizeLongitude(longitude: number): number {
+  return ((longitude + 180) % 360 + 360) % 360 - 180;
+}
+
 function geometryPositions(geometry: GeoJSON.Geometry): number[][][] {
   if (geometry.type === "Polygon") return geometry.coordinates as number[][][];
   if (geometry.type === "MultiPolygon") return (geometry.coordinates as number[][][][]).flat();
@@ -126,7 +134,7 @@ function geometryPositions(geometry: GeoJSON.Geometry): number[][][] {
 function geometryBounds(geometry: GeoJSON.Geometry): [number, number, number, number] | null {
   const points = geometryPositions(geometry).flat();
   if (points.length === 0) return null;
-  const longitudes = points.map((point) => point[0]).filter((value): value is number => value !== undefined);
+  const longitudes = points.map((point) => point[0]).filter((value): value is number => value !== undefined).map(normalizeLongitude);
   const latitudes = points.map((point) => point[1]).filter((value): value is number => value !== undefined);
   return [Math.min(...longitudes), Math.min(...latitudes), Math.max(...longitudes), Math.max(...latitudes)];
 }
@@ -264,7 +272,7 @@ function PlanetaryGlobe({ satellites, earthquakes, earthEvents, observations, se
     source.entities.removeAll();
     for (const observation of observations) {
       for (const ring of geometryPositions(observation.footprint)) {
-        const positions = ring.flatMap((point) => [point[0] ?? 0, point[1] ?? 0]);
+        const positions = ring.flatMap((point) => [normalizeLongitude(point[0] ?? 0), point[1] ?? 0]);
         source.entities.add({ id: `observation:${observation.id}:${source.entities.values.length}`, name: observation.source_item_id, polygon: { hierarchy: new PolygonHierarchy(Cartesian3.fromDegreesArray(positions)), material: Color.LIME.withAlpha(0.08), outline: true, outlineColor: Color.LIME.withAlpha(0.55) } });
       }
     }
@@ -275,7 +283,7 @@ function PlanetaryGlobe({ satellites, earthquakes, earthEvents, observations, se
     source.entities.removeAll();
     for (const quake of earthquakes) {
       const magnitude = quake.magnitude ?? 0;
-      source.entities.add({ id: `earthquake:${quake.id}`, name: quake.title, position: Cartesian3.fromDegrees(quake.longitude, quake.latitude, Math.max(0, -quake.depth_km * 1000)), point: { pixelSize: Math.max(5, 5 + magnitude * 1.8), color: magnitude >= 6 ? Color.RED : magnitude >= 4 ? Color.ORANGE : Color.YELLOW.withAlpha(0.85), outlineColor: Color.BLACK, outlineWidth: 1, distanceDisplayCondition: new DistanceDisplayCondition(0, 2.8e7) } });
+      source.entities.add({ id: `earthquake:${quake.id}`, name: quake.title, position: Cartesian3.fromDegrees(normalizeLongitude(quake.longitude), quake.latitude, Math.max(0, -quake.depth_km * 1000)), point: { pixelSize: Math.max(5, 5 + magnitude * 1.8), color: magnitude >= 6 ? Color.RED : magnitude >= 4 ? Color.ORANGE : Color.YELLOW.withAlpha(0.85), outlineColor: Color.BLACK, outlineWidth: 1, distanceDisplayCondition: new DistanceDisplayCondition(0, 2.8e7) } });
     }
   }, [earthquakes]);
 
@@ -288,7 +296,7 @@ function PlanetaryGlobe({ satellites, earthquakes, earthEvents, observations, se
       source.entities.add({
         id: `earth-event:${event.id}`,
         name: event.title,
-        position: Cartesian3.fromDegrees(event.longitude, event.latitude, 0),
+        position: Cartesian3.fromDegrees(normalizeLongitude(event.longitude), event.latitude, 0),
         point: { pixelSize: 7, color, outlineColor: Color.BLACK.withAlpha(0.7), outlineWidth: 1, distanceDisplayCondition: new DistanceDisplayCondition(0, 4e7) },
         label: { text: `${event.category_title}: ${event.title}`, font: "9px Inter, sans-serif", fillColor: color, showBackground: true, backgroundColor: Color.BLACK.withAlpha(0.6), verticalOrigin: VerticalOrigin.BOTTOM, horizontalOrigin: HorizontalOrigin.LEFT, pixelOffset: new Cartesian2(7, -7), distanceDisplayCondition: new DistanceDisplayCondition(0, 6.5e6) },
       });

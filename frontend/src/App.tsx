@@ -10,30 +10,56 @@ const Dashboard = lazy(() =>
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [hasToken, setHasToken] = useState(() => Boolean(tokenStore.get()));
-  const [restoring, setRestoring] = useState(hasToken);
+  const [restoring, setRestoring] = useState(true);
+  const [localModeUnavailable, setLocalModeUnavailable] = useState(false);
 
   useEffect(() => {
-    if (!hasToken || user) {
+    if (user) {
       setRestoring(false);
       return;
     }
-    api.me()
-      .then(setUser)
-      .catch(() => setHasToken(false))
-      .finally(() => setRestoring(false));
-  }, [hasToken, user]);
+    let cancelled = false;
+    async function establishSession() {
+      // 1. Restore an existing token; 2. otherwise ask for a local-appliance
+      // session (no credentials); 3. only if both fail, show the login form.
+      if (tokenStore.get()) {
+        try {
+          const restored = await api.me();
+          if (!cancelled) setUser(restored);
+          return;
+        } catch {
+          tokenStore.clear();
+        }
+      }
+      try {
+        const session = await api.localSession();
+        tokenStore.set(session.access_token);
+        if (!cancelled) setUser(session.user);
+      } catch {
+        if (!cancelled) setLocalModeUnavailable(true);
+      }
+    }
+    establishSession().finally(() => {
+      if (!cancelled) setRestoring(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   if (restoring) {
-    return <div className="app-loader"><span /><p>Restoring secure workspace…</p></div>;
+    return <div className="app-loader"><span /><p>Connecting to monitoring core…</p></div>;
   }
 
-  if (!hasToken || !user) {
-    return <Login onAuthenticated={(authenticatedUser) => { setUser(authenticatedUser); setHasToken(true); }} />;
+  if (!user) {
+    if (!localModeUnavailable) {
+      return <div className="app-loader"><span /><p>Connecting to monitoring core…</p></div>;
+    }
+    return <Login onAuthenticated={(authenticatedUser) => { setUser(authenticatedUser); setLocalModeUnavailable(false); }} />;
   }
   return (
     <Suspense fallback={<div className="app-loader"><span /><p>Loading Earth intelligence…</p></div>}>
-      <Dashboard user={user} onLogout={() => { setUser(null); setHasToken(false); }} />
+      <Dashboard user={user} onLogout={() => { setUser(null); setLocalModeUnavailable(true); }} />
     </Suspense>
   );
 }

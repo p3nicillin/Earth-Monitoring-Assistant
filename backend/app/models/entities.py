@@ -6,6 +6,7 @@ from typing import Any
 from geoalchemy2 import Geometry
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -41,6 +43,7 @@ class Role(StrEnum):
     viewer = "viewer"
     analyst = "analyst"
     admin = "admin"
+    system = "system"  # non-interactive account (e.g. global monitoring bootstrap); never logs in
 
 
 class EventCategory(StrEnum):
@@ -215,5 +218,68 @@ class Report(TimestampMixin, Base):
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.completed)
 
 
+class MetricSample(Base):
+    """One measurement of a live space-weather metric, persisted so the system
+    accumulates its own history instead of depending on upstream retention.
+    This history is what the adaptive baselines and forecast scoring learn from."""
+
+    __tablename__ = "metric_samples"
+    __table_args__ = (UniqueConstraint("metric", "time_tag", name="uq_metric_sample"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    metric: Mapped[str] = mapped_column(String(80), index=True)
+    time_tag: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    value: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MetricForecast(Base):
+    """A statistical forecast made by this system, kept so it can later be
+    scored against what actually happened. abs_error stays NULL until a
+    matching observed sample resolves the forecast."""
+
+    __tablename__ = "metric_forecasts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    metric: Mapped[str] = mapped_column(String(80), index=True)
+    model_name: Mapped[str] = mapped_column(String(80))
+    model_version: Mapped[str] = mapped_column(String(40))
+    made_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    target_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    horizon_minutes: Mapped[int] = mapped_column(Integer)
+    predicted_value: Mapped[float] = mapped_column(Float)
+    actual_value: Mapped[float | None] = mapped_column(Float)
+    abs_error: Mapped[float | None] = mapped_column(Float)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ImageryCapture(TimestampMixin, Base):
+    """A deduplicated frame of live space imagery archived to local disk.
+    content_hash makes re-fetching an unchanged upstream frame a no-op."""
+
+    __tablename__ = "imagery_captures"
+    __table_args__ = (
+        UniqueConstraint("source_key", "content_hash", name="uq_imagery_capture_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_key: Mapped[str] = mapped_column(String(80), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    source: Mapped[str] = mapped_column(String(120))
+    upstream_url: Mapped[str] = mapped_column(String(500))
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    file_path: Mapped[str] = mapped_column(String(500))
+    byte_size: Mapped[int] = mapped_column(BigInteger)
+    content_type: Mapped[str] = mapped_column(String(80))
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONType, default=dict)
+
+
 Index("ix_events_project_detected", Event.project_id, Event.detected_at.desc())
 Index("ix_observations_watch_captured", Observation.watch_area_id, Observation.captured_at.desc())
+Index("ix_metric_samples_metric_time", MetricSample.metric, MetricSample.time_tag.desc())
+Index(
+    "ix_imagery_captures_source_captured",
+    ImageryCapture.source_key,
+    ImageryCapture.captured_at.desc(),
+)

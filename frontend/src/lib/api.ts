@@ -5,6 +5,11 @@ import type {
   EarthquakeFeed,
   EventCollection,
   FeatureCollection,
+  ForecastFeed,
+  ImageryGallery,
+  ImagerySourceStatus,
+  LearningStatus,
+  MetricBaseline,
   MonitoringEvent,
   MonitoringResult,
   Project,
@@ -78,6 +83,9 @@ export const api = {
       body,
     });
   },
+  // Local-appliance mode: the API issues a session for the auto-provisioned
+  // operator without credentials. 404s when the deployment requires login.
+  localSession: () => request<TokenResponse>("/auth/session", { method: "POST" }),
   me: () => request<User>("/auth/me"),
   projects: () => request<Project[]>("/projects"),
   createProject: (payload: { name: string; description: string; color: string }) =>
@@ -188,4 +196,55 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question, project_id: projectId ?? null }),
     }),
+  learningStatus: () => request<LearningStatus>("/insights/status"),
+  learningBaselines: () => request<MetricBaseline[]>("/insights/baselines"),
+  learningForecasts: () => request<ForecastFeed>("/insights/forecasts"),
+  imagerySources: () => request<ImagerySourceStatus[]>("/imagery/sources"),
+  imageryCaptures: (sourceKey?: string, limit = 60, offset = 0) =>
+    request<ImageryGallery>(
+      `/imagery/captures?limit=${limit}&offset=${offset}${sourceKey ? `&source_key=${encodeURIComponent(sourceKey)}` : ""}`,
+    ),
+  imageryFileUrl: (captureId: string) => `${API_URL}/imagery/captures/${captureId}/file`,
+  globalSummary: () => request<DashboardSummary>("/global/summary"),
+  globalEvents: () => request<EventCollection>("/global/events"),
+  globalEventsGeoJSON: () => request<FeatureCollection>("/global/events/geojson"),
+  streamGlobal: async (
+    onSummary: (summary: DashboardSummary) => void,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const token = tokenStore.get();
+    const headers = new Headers({ Accept: "text/event-stream" });
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch(`${API_URL}/global/stream`, { headers, signal });
+    if (!response.ok || !response.body) {
+      if (response.status === 401) tokenStore.clear();
+      throw new ApiError(response.status, `Live stream failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let frameEnd = buffer.indexOf("\n\n");
+      while (frameEnd >= 0) {
+        const frame = buffer.slice(0, frameEnd);
+        buffer = buffer.slice(frameEnd + 2);
+        const data = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data: "))
+          .map((line) => line.slice(6))
+          .join("\n");
+        if (data) {
+          try {
+            onSummary(JSON.parse(data) as DashboardSummary);
+          } catch {
+            // Skip malformed frames; the next snapshot replaces the state anyway.
+          }
+        }
+        frameEnd = buffer.indexOf("\n\n");
+      }
+    }
+  },
 };

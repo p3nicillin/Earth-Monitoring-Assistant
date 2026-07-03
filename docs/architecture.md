@@ -34,9 +34,41 @@ or H3/S2 cells as secondary distribution keys.
 stay in `metadata_json`; useful assets retain their href and media type. The first live provider is
 Microsoft Planetary Computer Sentinel-2 L2A.
 
-Live catalogue ingestion never invokes a detector. A production detector must expose its name and
-immutable version, validate required bands/quality assets, and return evidence sufficient to
-reproduce or review the output.
+Live catalogue ingestion always persists observations first and independently of any detector; a
+detector only ever adds evidence-backed events on top. `Detector` (`app/detectors/base.py`) is a
+small protocol — immutable `name`/`version`, `async detect(context) -> list[DetectionResult]` — so
+`MonitoringService` composes detectors without owning their internals. The first concrete detector,
+`VegetationChangeDetector` (`app/detectors/vegetation_change.py`), compares the two most recent
+cloud-filtered Sentinel-2 observations for a watch area: `app/analysis/raster_io.py` opens the
+Planetary Computer's signed COG band assets and reads only the pixel window covering the watch
+area (never a full scene), and `app/analysis/indices.py`'s existing NDVI/NBR/dNBR primitives decide
+whether the change clears a published threshold (Key & Benson 2006 burn-severity breakpoints, plus
+an NDVI-drop gate excluding never-vegetated pixels). Every number on a flagged event's evidence —
+before/after item ids, mean/max dNBR, changed-pixel fraction, thresholds applied — is reproducible
+by hand; nothing is a fabricated confidence score. A detector failure (bad COG, network blip) is
+caught at the `MonitoringService` boundary and never rolls back the observations already committed.
+
+### Continuous ingestion
+
+`MonitoringScheduler` (`app/scheduling/monitoring_scheduler.py`) is a single-process
+`AsyncIOScheduler` that periodically asks which active watch areas are due (per their `schedule`
+field: daily/weekly/manual) and runs the identical `MonitoringService` pipeline used by the manual
+"Search live catalogue" action — ingestion is no longer only click-triggered. Three independent
+layers prevent duplicate/overlapping work: a per-watch-area in-process lock, the existing
+`Observation` unique constraint, and event deduplication by (detector, before-item, after-item) in
+`MonitoringService`. This is intentionally single-process, matching the modular-monolith design
+goal; multi-process/horizontal scheduling would need a durable job-lock table (see Scaling path).
+
+### Global monitoring
+
+Every other endpoint resolves data through `Project.owner_id == current_user.id`; that boundary is
+untouched everywhere else. `/api/v1/global/*` (`app/api/global_monitoring.py`) is a single, narrow,
+explicitly-documented exception: any authenticated user (never anonymous) may read a system-owned
+"Global Monitoring" project's six continent-scale watch areas, bootstrapped idempotently at startup
+by `app/bootstrap/global_monitoring.py` under an account that can never authenticate
+(`role=system`, `is_active=False`). The scheduler treats these watch areas like any other — no
+special-casing — so the same real detector produces the same evidence-backed events there. This
+endpoint group is read-only; the scheduler is the only writer.
 
 ### Solar-system live feeds and spot detections
 
@@ -60,26 +92,54 @@ reviewable events.
 
 ```mermaid
 sequenceDiagram
-    actor Analyst
-    participant API
+    actor Trigger as Analyst or Scheduler
+    participant API as MonitoringService
     participant Provider
     participant Detector
+    participant Raster as PlanetaryComputer (COG)
     participant PostGIS
-    Analyst->>API: Run monitor for owned watch area
+    Trigger->>API: Run monitor for a watch area
     API->>Provider: Search geometry, date, quality
     Provider-->>API: Normalized source items
     API->>PostGIS: Upsert immutable observations
-    alt production detector is configured
-        API->>Detector: Analyse aligned observations
-        Detector-->>API: Versioned detections + evidence
-        API->>PostGIS: Persist reviewable events
-    else metadata ingestion only
-        API-->>Analyst: Observations created, zero events
+    alt >=2 qualifying observations exist
+        API->>Detector: Analyse recent observations
+        Detector->>Raster: Sign + read band windows (AOI only)
+        Raster-->>Detector: NIR/Red/SWIR2 pixel windows
+        Detector-->>API: DetectionResult (flagged or not) + evidence
+        alt flagged and not a duplicate
+            API->>PostGIS: Persist reviewable event
+        end
+    else fewer than 2 qualifying observations
+        API-->>Trigger: Observations created, zero events
     end
 ```
 
-The current service is synchronous to keep the vertical slice inspectable. Before processing raster
-assets, the API should enqueue an idempotent job and return `202 Accepted` with a run resource.
+The scheduler (`app/scheduling/monitoring_scheduler.py`) is the "Scheduler" trigger above, running
+the same pipeline on an interval instead of only on a manual click. The service itself is still
+synchronous per run to keep it inspectable; only the band reads are offloaded to a thread executor
+so they don't block the event loop. Before processing raster assets at much larger scale, the API
+should move to an idempotent job queue and return `202 Accepted` with a run resource.
+
+The same scheduler owns two further autonomous loops:
+
+- **Learning tick** (`app/learning/`, default every 5 minutes): archives normalized SWPC
+  space-weather readings into `metric_samples`, resolves matured `metric_forecasts` rows against
+  the nearest recorded observation, issues a fresh hourly forecast set (damped-trend plus a
+  naive-persistence control per metric/horizon), and prunes the archive past retention daily.
+  Baselines derived from this archive feed `adaptive-baseline` spot detections; learned
+  thresholds may only ever be *stricter* than the published NOAA floors, so the static detector
+  contract is never weakened. Forecast "skill" is the measured error ratio against persistence —
+  the self-improvement claim is exactly that number.
+- **Imagery tick** (`app/imagery/`, default every 15 minutes): resolves each registered source
+  (static latest-frame URLs for SDO/SOHO/SUVI; the EPIC index API for DSCOVR) to a concrete
+  frame, downloads with size/content-type gates, deduplicates by SHA-256, writes to the imagery
+  volume, records provenance in `imagery_captures`, and prunes each source to a bounded count.
+
+Both loops degrade per tick (a feed outage skips that step and logs) and neither can crash the
+scheduler. Local appliance mode (`LOCAL_MODE`, `app/bootstrap/local_mode.py`) adds a
+credential-free session endpoint for one auto-provisioned operator; every downstream
+authorization path is unchanged because the endpoint still issues a standard short-lived JWT.
 
 ## Scaling path
 
@@ -89,7 +149,7 @@ assets, the API should enqueue an idempotent job and return `202 Accepted` with 
 | Large imagery | COGs in S3-compatible object storage | Lifecycle policies and regional replication |
 | Expensive map queries | Materialized summaries and vector tiles | Dedicated tile service and CDN |
 | Growing event table | Monthly partitions and retention policy | Regional database shards |
-| Many schedules | Scheduler emitting idempotent jobs | Partitioned workflow engine |
+| Many schedules | Single-process scheduler (in place) outgrowing one process | Durable job-lock table + partitioned workflow engine |
 | Many replicas | Gateway/Redis rate limits | Tenant quotas and cost controls |
 | Model proliferation | Model cards + immutable artifact versions | Registry, approval gates, drift monitoring |
 

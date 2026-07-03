@@ -1,12 +1,16 @@
 name: earth-monitor
 
+# BIND_HOST controls which host interface ports are published on:
+# 127.0.0.1 (default) for a single workstation, 0.0.0.0 for a LAN
+# appliance such as a Proxmox VM (see docs/deploy-proxmox.md).
+
 services:
   postgres:
     image: postgis/postgis:17-3.5-alpine
     environment:
       POSTGRES_DB: earth_monitor
       POSTGRES_USER: earth
-      POSTGRES_PASSWORD: earth
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-earth}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -22,22 +26,29 @@ services:
     build:
       context: ./backend
     environment:
-      ENVIRONMENT: development
-      SECRET_KEY: local-compose-secret-replace-before-production
-      DATABASE_URL: postgresql+asyncpg://earth:earth@postgres:5432/earth_monitor
-      CORS_ORIGINS: '["http://localhost:5173","http://localhost:8080"]'
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SECRET_KEY: ${SECRET_KEY:-local-compose-secret-replace-before-production}
+      DATABASE_URL: postgresql+asyncpg://earth:${POSTGRES_PASSWORD:-earth}@postgres:5432/earth_monitor
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://localhost:8080"]}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["localhost","127.0.0.1","testserver"]}
       BOOTSTRAP_LOCAL_WORKSPACE: "true"
       ALLOW_PUBLIC_REGISTRATION: "true"
       LOCAL_USER_EMAIL: analyst@terralens.app
       LOCAL_USER_PASSWORD: LocalAccess123!
+      LOCAL_MODE: ${LOCAL_MODE:-true}
+      LEARNING_ENABLED: ${LEARNING_ENABLED:-true}
+      IMAGERY_ENABLED: ${IMAGERY_ENABLED:-true}
+      IMAGERY_DIR: /data/imagery
     command: >-
       sh -c "alembic upgrade head && python -m app.seed &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BIND_HOST:-127.0.0.1}:8000:8000"
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - imagery_data:/data/imagery
     security_opt:
       - no-new-privileges:true
     depends_on:
@@ -54,10 +65,10 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:8000/api/v1
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
         VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN:-}
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${BIND_HOST:-127.0.0.1}:8080:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -65,3 +76,4 @@ services:
 
 volumes:
   postgres_data:
+  imagery_data:

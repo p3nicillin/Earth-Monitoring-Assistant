@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser
 from app.core.config import get_settings
+from app.learning.baselines import cached_baselines
 from app.schemas.solar_system import (
     DetectionFeed,
     EarthEventFeed,
@@ -37,7 +38,8 @@ def _service() -> SolarSystemService:
 @router.get("/overview", response_model=SolarSystemOverview)
 async def overview(user: CurrentUser) -> SolarSystemOverview:
     del user
-    return await _service().overview()
+    baselines = await cached_baselines(get_settings())
+    return await _service().overview(baselines)
 
 
 @router.get("/space-weather", response_model=SpaceWeather)
@@ -81,7 +83,8 @@ async def earth_events(user: CurrentUser) -> EarthEventFeed:
 @router.get("/detections", response_model=DetectionFeed)
 async def detections(user: CurrentUser) -> DetectionFeed:
     del user
-    snapshot = await _service().overview()
+    baselines = await cached_baselines(get_settings())
+    snapshot = await _service().overview(baselines)
     return snapshot.detections
 
 
@@ -94,7 +97,8 @@ async def stream(user: CurrentUser) -> StreamingResponse:
     async def event_stream() -> AsyncIterator[str]:
         yield f"retry: {settings.solar_stream_interval_seconds * 1000}\n\n"
         while True:
-            snapshot = await service.overview()
+            baselines = await cached_baselines(settings)
+            snapshot = await service.overview(baselines)
             yield f"event: overview\ndata: {snapshot.model_dump_json()}\n\n"
             await asyncio.sleep(settings.solar_stream_interval_seconds)
 

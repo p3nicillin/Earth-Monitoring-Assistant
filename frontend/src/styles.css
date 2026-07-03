@@ -290,3 +290,30 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
   .sun-panel, .detections-panel, .chart-panel, .neo-panel, .earth-events-panel { grid-column: span 12; }
   .planet-inspector { position: static; width: auto; margin-top: 8px; }
 }
+
+/* Adaptive intelligence (Insights) and autonomous space gallery */
+.insights-stats { grid-template-columns: repeat(4, 1fr); }
+.baseline-table .table-row { grid-template-columns: 1.5fr .7fr .9fr 1.3fr 1fr .9fr; }
+.maturity-bar { display: inline-block; width: 46px; height: 5px; margin-right: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; vertical-align: middle; }
+.maturity-bar b { display: block; height: 100%; border-radius: 3px; background: var(--green); }
+.skill-good { color: var(--green); }
+.skill-flat { color: #ffd58a; }
+.split-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.gallery-filters { display: flex; flex-wrap: wrap; gap: 7px; }
+.gallery-filters button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 999px; color: #86a098; background: #0b1714; font-size: 9px; cursor: pointer; }
+.gallery-filters button em { color: #4e675e; font-style: normal; font-size: 8px; }
+.gallery-filters button.active { color: #06130f; background: var(--green); border-color: var(--green); }
+.gallery-filters button.active em { color: rgba(4,18,13,.7); }
+.space-gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.space-gallery img { aspect-ratio: 1 / 1; }
+.space-gallery a { display: block; }
+@media (max-width: 1200px) {
+  .space-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .split-columns { grid-template-columns: 1fr; }
+  .insights-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 800px) {
+  .space-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .baseline-table .table-row { grid-template-columns: 1.5fr .8fr 1.2fr 1fr; }
+  .baseline-table .table-row > span:nth-child(4), .baseline-table .table-row > span:nth-child(6) { display: none; }
+}

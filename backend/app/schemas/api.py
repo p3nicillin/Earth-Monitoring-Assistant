@@ -169,7 +169,10 @@ class MonitoringRequest(ApiModel):
     provider: Literal["planetary-computer"] = "planetary-computer"
     max_cloud_cover: float = Field(default=30, ge=0, le=100)
     lookback_days: int = Field(default=30, ge=1, le=365)
-    limit: int = Field(default=20, ge=1, le=100)
+    # Large watch areas span multiple Sentinel-2 tiles; the detector needs enough
+    # items to find a same-tile pair separated by detector_min_days_between_pair,
+    # not just "the N most recent items overall" (see VegetationChangeDetector).
+    limit: int = Field(default=100, ge=1, le=200)
 
 
 class MonitoringResult(ApiModel):

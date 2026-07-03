@@ -34,7 +34,12 @@ export interface PassEstimate {
 function bearing(from: GroundPoint, to: GroundPoint): number {
   const lat1 = radiansLat(from.latitude);
   const lat2 = radiansLat(to.latitude);
-  const deltaLongitude = radiansLong(to.longitude - from.longitude);
+  // to.longitude - from.longitude is an angular delta, not a longitude itself, and can
+  // exceed +-180 when the ground track crosses the antimeridian between samples. Wrap it
+  // into (-180, 180] before converting to radians instead of feeding it through radiansLong,
+  // which validates its input as a real longitude and throws outside that range.
+  const wrappedDeltaDegrees = ((to.longitude - from.longitude + 540) % 360) - 180;
+  const deltaLongitude = (wrappedDeltaDegrees * Math.PI) / 180;
   const y = Math.sin(deltaLongitude) * Math.cos(lat2);
   const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLongitude);
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;

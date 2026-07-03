@@ -86,16 +86,23 @@ async def run_monitoring(
     result_status: Literal["completed", "no_imagery"] = (
         "completed" if outcome.source_items else "no_imagery"
     )
+    if not outcome.source_items:
+        message = "No suitable imagery was found in the search window."
+    elif outcome.events_created:
+        message = (
+            f"Sentinel-2 catalogue search completed. {outcome.events_created} evidence-backed "
+            "event(s) were flagged by the vegetation/burn-change detector."
+        )
+    else:
+        message = (
+            "Sentinel-2 catalogue search completed. Source observations were stored; the "
+            "detector found no significant change (or not enough qualifying imagery yet)."
+        )
     return MonitoringResult(
         run_id=outcome.run_id,
         source_items=outcome.source_items,
         observations_created=outcome.observations_created,
         events_created=outcome.events_created,
         status=result_status,
-        message=(
-            "Sentinel-2 catalogue search completed. Source observations were stored; "
-            "no detections are generated without a validated detector."
-            if outcome.source_items
-            else "No suitable imagery was found in the search window."
-        ),
+        message=message,
     )

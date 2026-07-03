@@ -1,8 +1,29 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Map, { Layer, NavigationControl, Source, type LayerProps, type MapRef } from "react-map-gl/maplibre";
 import { Crosshair } from "lucide-react";
 
 import type { FeatureCollection, MonitoringEvent } from "../types";
+
+const GLOBAL_VIEW = { longitude: 0, latitude: 20, zoom: 1.3 };
+
+function collectionBounds(collection: FeatureCollection): [[number, number], [number, number]] | null {
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  const visit = (coords: unknown): void => {
+    if (Array.isArray(coords) && typeof coords[0] === "number") {
+      const [lon, lat] = coords as [number, number];
+      minLon = Math.min(minLon, lon); maxLon = Math.max(maxLon, lon);
+      minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
+    } else {
+      for (const child of coords as unknown[]) visit(child);
+    }
+  };
+  for (const feature of collection.features) {
+    const geometry = feature.geometry;
+    if (geometry && "coordinates" in geometry) visit(geometry.coordinates);
+  }
+  if (!Number.isFinite(minLon) || !Number.isFinite(minLat)) return null;
+  return [[minLon, minLat], [maxLon, maxLat]];
+}
 
 const mapStyle = {
   version: 8 as const,
@@ -55,11 +76,23 @@ export function EventMap({ data, selected }: EventMapProps) {
     () => data ?? { type: "FeatureCollection", features: [] },
     [data],
   );
+
+  const recenter = () => {
+    const bounds = collectionBounds(collection);
+    if (bounds) mapRef.current?.fitBounds(bounds, { padding: 60, duration: 0, maxZoom: 10 });
+    else mapRef.current?.flyTo({ center: [GLOBAL_VIEW.longitude, GLOBAL_VIEW.latitude], zoom: GLOBAL_VIEW.zoom, duration: 0 });
+  };
+
+  useEffect(() => {
+    recenter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collection]);
+
   return (
     <div className="map-wrap">
       <Map
         ref={mapRef}
-        initialViewState={{ longitude: -1.4, latitude: 52.3, zoom: 5.4 }}
+        initialViewState={GLOBAL_VIEW}
         mapStyle={mapStyle}
       >
         <NavigationControl position="bottom-right" showCompass={false} />
@@ -72,7 +105,7 @@ export function EventMap({ data, selected }: EventMapProps) {
       <button
         className="map-tool"
         aria-label="Recenter map"
-        onClick={() => mapRef.current?.flyTo({ center: [-1.4, 52.3], zoom: 5.4 })}
+        onClick={recenter}
       ><Crosshair size={17} /></button>
       <div className="map-legend">
         {(["low", "medium", "high", "critical"] as const).map((severity) => (

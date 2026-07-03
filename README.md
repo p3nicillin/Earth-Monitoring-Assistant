@@ -5,12 +5,17 @@ events. The product UI is called **TerraLens**; this repository contains its Fas
 React GIS console, monitoring adapters, analysis primitives, tests, and container deployment.
 
 > This is a production-oriented first vertical slice, not a claim of worldwide AI coverage. Live
-> Sentinel-2 catalogue ingestion works today. Operational pixel-level detectors, background
-> queues, alert delivery, and global tiling are planned behind
-> stable interfaces described below.
+> Sentinel-2 catalogue ingestion works today, feeding a real pixel-level vegetation/burn-change
+> detector and a continuous scheduler. Alert delivery, background job queues at scale, and precise
+> (non-coarse) global tiling are planned behind the stable interfaces described below.
 
 ## What works today
 
+- Local appliance mode (`LOCAL_MODE=true`): the console signs itself in as an
+  auto-provisioned local operator with no login step — built for trusted-LAN,
+  self-hosted deployments such as a Proxmox LXC
+  ([deployment guide](docs/deploy-proxmox.md)); credential login remains the
+  default everywhere else
 - JWT sign-in with Argon2 password hashing and owner-scoped project access
 - Projects and polygon watch areas stored in PostgreSQL/PostGIS (EPSG:4326)
 - Event catalogue with geometry, confidence, severity, detector identity/version, evidence, and
@@ -32,11 +37,28 @@ React GIS console, monitoring adapters, analysis primitives, tests, and containe
   anomalies, significant earthquakes, lunar-distance NEO gates, and open natural events — with
   deterministic ids, severity ranking, and per-feed graceful degradation, served over REST and a
   server-sent-events live stream
+- A self-improving statistical layer: every live space-weather reading is archived locally,
+  per-metric climatology (quantile baselines) is learned from that growing archive, adaptive
+  anomaly thresholds tighten as history accumulates (never below published NOAA floors), and
+  hourly damped-trend forecasts are issued and later **scored against what actually happened**
+  next to a naive-persistence control — improvement is measured, never asserted (Insights page,
+  `/api/v1/insights/*`)
+- Autonomous space-imagery archiving: the scheduler continuously captures the latest SDO,
+  SOHO/LASCO, GOES SUVI, and DSCOVR EPIC frames, deduplicates them by content hash, stores them
+  on local disk with provenance, and prunes each source to a bounded archive (Space Gallery
+  page, `/api/v1/imagery/*`)
 - Solar System operations console: live orrery with planet inspector, multi-wavelength Sun
   imagery, X-ray/Kp/solar-wind charts, filterable detection feed, close-approach table, and EONET
   events rendered on the 3D globe
-- Honest monitoring behavior: live STAC items become observations and never become events without
-  a separately validated detector
+- Honest monitoring behavior: live STAC items become observations first and always; a real,
+  evidence-backed vegetation/burn-change detector (dNBR + NDVI, Key & Benson 2006 thresholds) reads
+  signed Sentinel-2 band windows and flags events only when a published threshold is cleared —
+  every number in the evidence is reproducible by hand, never a fabricated score
+- A single-process scheduler runs that same pipeline automatically for active watch areas on their
+  configured cadence, so ingestion is continuous rather than click-triggered only
+- A read-only, whole-planet **Global** live feed (six continent-scale watch areas, system-owned,
+  visible to every signed-in user) runs the identical detector pipeline and streams live via SSE —
+  additive to, and without weakening, the existing per-project owner scoping
 - Vectorized remote-sensing primitives for 15 documented spectral indices, dNBR, masked change,
   and CRS/affine/nodata raster-grid validation
 - GeoJSON event endpoints, dashboard aggregates, report generation, and constrained
@@ -62,7 +84,9 @@ Open:
 - API readiness: <http://localhost:8000/health/ready>
 - Prometheus metrics: <http://localhost:8000/metrics>
 
-Local workspace account:
+The Compose default enables **local appliance mode** (`LOCAL_MODE=true`): the console
+authenticates automatically as the auto-provisioned local operator, so there is no login step.
+A credential account also exists for the token flow and API testing:
 
 ```text
 Email:    analyst@terralens.app
@@ -70,7 +94,9 @@ Password: LocalAccess123!
 ```
 
 The Compose credentials are for local evaluation only. Change the database password,
-`SECRET_KEY`, local account, and CORS origins before any shared deployment.
+`SECRET_KEY`, local account, and CORS origins — and set `LOCAL_MODE=false` — before any shared
+deployment. For hosting the stack as a LAN appliance on a Proxmox LXC container, follow
+[docs/deploy-proxmox.md](docs/deploy-proxmox.md).
 
 Stop the stack with `docker compose down`. Add `-v` only when you intentionally want to delete the
 local database volume.
@@ -117,10 +143,15 @@ path.
 ```text
 backend/
   app/
-    analysis/       Spectral-index and change primitives
+    analysis/       Spectral-index, change, and raster-window-read primitives
     api/            Versioned HTTP routes and access checks
+    bootstrap/      Idempotent startup bootstrap (global monitoring)
     core/           Configuration, database, security
+    detectors/      Detector protocol and the real vegetation/burn-change detector
+    imagery/        Autonomous live space-imagery harvesting and archiving
+    learning/       Metric archive, adaptive baselines, self-scored forecasts
     models/         PostGIS-backed domain entities
+    scheduling/     Continuous ingestion, learning, and imagery scheduler
     schemas/        Validated API contracts
     services/       Monitoring, assistant, and reporting use cases
   migrations/       Alembic database migration
@@ -189,7 +220,7 @@ All application endpoints live under `/api/v1`.
 
 | Area | Endpoints | Purpose |
 | --- | --- | --- |
-| Authentication | `POST /auth/register`, `POST /auth/token`, `GET /auth/me` | Accounts and JWT sessions |
+| Authentication | `POST /auth/register`, `POST /auth/token`, `POST /auth/session`, `GET /auth/me` | Accounts, JWT sessions, and the LOCAL_MODE credential-free operator session |
 | Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{id}` | Owned monitoring projects |
 | Watch areas | `GET/POST /projects/{id}/watch-areas` | Validated WGS84 polygons and schedules |
 | Events | `GET /events`, `GET /events/geojson`, `PATCH /events/{id}/review` | Catalogue, map features, and auditable review decisions |
@@ -197,6 +228,9 @@ All application endpoints live under `/api/v1`.
 | Planetary operations | `GET /planet/satellites`, `GET /planet/earthquakes` | Cached, validated CelesTrak OMM and USGS hazard feeds |
 | Solar system | `GET /solar-system/overview`, `/space-weather`, `/ephemeris`, `/neo`, `/earth-events`, `/detections`, `GET /solar-system/stream` (SSE) | Live heliophysics, planet positions, close approaches, natural events, and rule-based spot detections |
 | Dashboard | `GET /dashboard/summary` | Scoped operational aggregates |
+| Global monitoring | `GET /global/events`, `/global/events/geojson`, `/global/summary`, `GET /global/stream` (SSE) | Read-only, whole-planet feed shared across all authenticated users |
+| Adaptive learning | `GET /insights/status`, `/insights/baselines`, `/insights/forecasts` | Archive depth, learned climatology/thresholds, and self-scored forecasts |
+| Space imagery | `GET /imagery/sources`, `/imagery/captures`, `GET /imagery/captures/{id}/file` | Autonomously archived, hash-deduplicated live space imagery |
 | Assistant | `POST /assistant/query` | Deterministic natural-language filters |
 | Reports | `GET/POST /reports` | Evidence summaries for selected periods |
 
@@ -213,12 +247,49 @@ Use the returned token as `Authorization: Bearer <token>`.
 ### Satellite monitoring
 
 `POST /api/v1/monitoring/runs` queries recent cloud-filtered Sentinel-2 L2A items through the
-Microsoft Planetary Computer and stores their STAC provenance. It creates **no event** because
-metadata alone is not scientific change evidence.
+Microsoft Planetary Computer and stores their STAC provenance. Metadata alone is never scientific
+change evidence, so this step **always** creates observations only.
 
-This safety property is intentional. A real detector should implement the detector contract, read
-the necessary signed assets, apply cloud/quality masks, align acquisitions, calculate metrics or
-model outputs, and return its evidence bundle.
+A real detector runs immediately after, on the observations that already exist for the watch area:
+`VegetationChangeDetector` reads the signed NIR/Red/SWIR2 band windows for the two most recent
+qualifying (cloud-filtered, sufficiently time-separated) observations, computes NDVI and dNBR, and
+flags an event only when a published burn-severity or vegetation-loss threshold is cleared. An
+event's `evidence` field always contains the exact before/after item ids and numbers a reviewer
+needs to reproduce the result — this is a real detector, not a fabricated score, and it can
+legitimately produce zero events when nothing has changed or too few observations exist yet.
+
+`MonitoringScheduler` runs this same pipeline automatically for every active watch area on its
+configured `schedule` (daily/weekly/manual), so a click on "Search live catalogue" is no longer the
+only way new imagery gets checked.
+
+### Adaptive learning (Insights)
+
+The platform accumulates its own observational record instead of depending on upstream
+retention. Every learning tick (5 minutes by default) archives the normalized NOAA SWPC
+readings — Kp, GOES X-ray flux, solar-wind speed, IMF Bz, proton flux — into `metric_samples`.
+From that archive it derives, per metric:
+
+- **Learned climatology** — rolling-window quantiles (p50/p95/p99) of local history.
+- **Adaptive anomaly thresholds** — once a metric has enough samples, the detection threshold
+  may tighten from the published NOAA floor toward the locally observed p99 (p1 for Bz). It can
+  never relax below the published floor, so learning adds early-warning sensitivity without
+  suppressing any standard alert. These fire as `adaptive-baseline` detections in the live feed.
+- **Self-scored forecasts** — hourly damped-trend forecasts for Kp and solar-wind speed at 3/6/
+  12/24 h horizons, stored alongside a naive-persistence control and resolved against the sample
+  nearest each target time. The Insights page reports mean absolute error and the trend model's
+  error as a percentage of the control's: the system's claim to be "learning" is exactly that
+  measured ratio, nothing more.
+
+X-ray and proton flux are archived and baselined but deliberately not trend-forecast: impulsive
+series make linear extrapolation dishonest.
+
+### Space imagery archive (Space Gallery)
+
+The scheduler sweeps nine keyless public sources — five SDO channels, SOHO/LASCO C2 + C3, GOES
+SUVI 19.5 nm, and DSCOVR EPIC natural colour — every 15 minutes. Each frame is hashed; only
+genuinely new content is written to disk and catalogued with source, upstream URL, capture time,
+and byte size. Each source is pruned to a bounded number of frames, so the archive grows with
+what the Sun and Earth actually do, not with wall-clock time.
 
 ### Planet 3D operations
 
@@ -241,6 +312,10 @@ and pass times are SGP4 estimates rather than acquisition commitments.
 - Every project, watch area, event, report, and assistant query is scoped through the authenticated
   owner.
 - Public registration is disabled by default and enabled explicitly by the local Compose profile.
+- `LOCAL_MODE` (off by default) issues a credential-free session for one auto-provisioned local
+  operator whose password is random and undisclosed; every downstream request still carries a
+  normal short-lived JWT. Enable it only on trusted networks — it is an appliance convenience,
+  not an internet-facing posture.
 - Passwords use Argon2; access tokens are signed HS256 JWTs with expiry, role, and token type.
 - Request bodies use Pydantic validation, including closed WGS84 polygons and password strength.
 - API responses carry request IDs and baseline browser security headers.

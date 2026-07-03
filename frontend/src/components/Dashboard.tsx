@@ -3,6 +3,7 @@ import {
   Activity,
   Bell,
   Bot,
+  Camera,
   ChevronDown,
   CircleHelp,
   CloudSun,
@@ -14,11 +15,13 @@ import {
   Menu,
   Orbit,
   Radar,
+  Radio,
   Search,
   Settings,
   ShieldCheck,
   Sparkles,
   Sun,
+  TrendingUp,
   TriangleAlert,
 } from "lucide-react";
 import { lazy, useEffect, useMemo, useState } from "react";
@@ -55,6 +58,9 @@ const categoryColors: Record<string, string> = {
 
 const PlanetaryPage = lazy(() => import("./PlanetaryPage"));
 const SolarSystemPage = lazy(() => import("./SolarSystemPage"));
+const GlobalPage = lazy(() => import("./GlobalPage"));
+const InsightsPage = lazy(() => import("./InsightsPage"));
+const GalleryPage = lazy(() => import("./GalleryPage"));
 
 function timeAgo(value: string) {
   const hours = Math.max(1, Math.round((Date.now() - new Date(value).getTime()) / 3_600_000));
@@ -62,12 +68,15 @@ function timeAgo(value: string) {
 }
 
 type WorkspacePage =
+  | "global"
   | "overview"
   | "planet"
   | "solar"
   | "monitoring"
   | "events"
   | "projects"
+  | "insights"
+  | "gallery"
   | "imagery"
   | "reports"
   | "assistant"
@@ -75,22 +84,25 @@ type WorkspacePage =
   | "settings";
 
 const workspacePages = new Set<WorkspacePage>([
-  "overview", "planet", "solar", "monitoring", "events", "projects", "imagery", "reports",
-  "assistant", "documentation", "settings",
+  "global", "overview", "planet", "solar", "monitoring", "events", "projects", "insights",
+  "gallery", "imagery", "reports", "assistant", "documentation", "settings",
 ]);
 
 function pageFromHash(): WorkspacePage {
   const candidate = window.location.hash.slice(1) as WorkspacePage;
-  return workspacePages.has(candidate) ? candidate : "overview";
+  return workspacePages.has(candidate) ? candidate : "global";
 }
 
 function WorkspaceContent({ page, projectId, projects }: { page: WorkspacePage; projectId?: string; projects: Project[] }) {
   const props = { projectId, projects };
+  if (page === "global") return <GlobalPage />;
   if (page === "planet") return <PlanetaryPage {...props} />;
   if (page === "solar") return <SolarSystemPage />;
   if (page === "monitoring") return <MonitoringPage {...props} />;
   if (page === "events") return <EventsPage {...props} />;
   if (page === "projects") return <ProjectsPage {...props} />;
+  if (page === "insights") return <InsightsPage />;
+  if (page === "gallery") return <GalleryPage />;
   if (page === "imagery") return <ImageryPage {...props} />;
   if (page === "reports") return <ReportsPage {...props} />;
   if (page === "assistant") return <AssistantPage {...props} />;
@@ -145,6 +157,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         <div className="brand-lockup sidebar-brand"><span className="brand-mark"><Globe2 size={20} /></span><span>TerraLens</span></div>
         <nav>
           <p>WORKSPACE</p>
+          <a href="#global" onClick={() => navigate("global")} className={activePage === "global" ? "active" : ""}><Radio size={18} />Global<span className="live-nav-dot" /></a>
           <a href="#overview" onClick={() => navigate("overview")} className={activePage === "overview" ? "active" : ""}><MapIcon size={18} />Overview</a>
           <a href="#planet" onClick={() => navigate("planet")} className={activePage === "planet" ? "active" : ""}><Orbit size={18} />Planet 3D<span className="live-nav-dot" /></a>
           <a href="#solar" onClick={() => navigate("solar")} className={activePage === "solar" ? "active" : ""}><Sun size={18} />Solar System<span className="live-nav-dot" /></a>
@@ -152,6 +165,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           <a href="#events" onClick={() => navigate("events")} className={activePage === "events" ? "active" : ""}><TriangleAlert size={18} />Events</a>
           <a href="#projects" onClick={() => navigate("projects")} className={activePage === "projects" ? "active" : ""}><FolderKanban size={18} />Projects</a>
           <p>ANALYSIS</p>
+          <a href="#insights" onClick={() => navigate("insights")} className={activePage === "insights" ? "active" : ""}><TrendingUp size={18} />Insights<span className="live-nav-dot" /></a>
+          <a href="#gallery" onClick={() => navigate("gallery")} className={activePage === "gallery" ? "active" : ""}><Camera size={18} />Space Gallery</a>
           <a href="#imagery" onClick={() => navigate("imagery")} className={activePage === "imagery" ? "active" : ""}><Layers3 size={18} />Imagery</a>
           <a href="#reports" onClick={() => navigate("reports")} className={activePage === "reports" ? "active" : ""}><Activity size={18} />Reports</a>
           <a href="#assistant" onClick={() => navigate("assistant")} className={activePage === "assistant" ? "active" : ""}><Bot size={18} />Assistant</a>

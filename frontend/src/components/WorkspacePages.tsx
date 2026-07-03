@@ -30,7 +30,7 @@ interface PageProps {
   projects: Project[];
 }
 
-function PageHeading({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
+export function PageHeading({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
   return (
     <header className="page-heading">
       <p className="eyebrow">{eyebrow}</p>

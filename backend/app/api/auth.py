@@ -33,6 +33,27 @@ async def register(payload: UserCreate, session: SessionDep) -> Token:
     return Token(access_token=token, expires_at=expires_at, user=UserRead.model_validate(user))
 
 
+@router.post("/session", response_model=Token)
+async def local_session(session: SessionDep) -> Token:
+    """Issue a session for the auto-provisioned local operator (LOCAL_MODE only).
+
+    Local mode targets trusted-LAN appliance installs; on shared deployments the
+    flag stays off and this endpoint 404s, leaving credential login mandatory.
+    """
+    settings = get_settings()
+    if not settings.local_mode:
+        raise HTTPException(status_code=404, detail="Local session mode is disabled")
+    user = await session.scalar(
+        select(User).where(
+            User.email == str(settings.local_operator_email), User.is_active.is_(True)
+        )
+    )
+    if user is None:
+        raise HTTPException(status_code=503, detail="Local operator is not provisioned yet")
+    token, expires_at = create_access_token(str(user.id), role=user.role.value)
+    return Token(access_token=token, expires_at=expires_at, user=UserRead.model_validate(user))
+
+
 @router.post("/token", response_model=Token)
 async def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()], session: SessionDep

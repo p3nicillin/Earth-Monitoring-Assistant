@@ -17,7 +17,7 @@ class SearchRequest(BaseModel):
     start: AwareDatetime
     end: AwareDatetime
     max_cloud_cover: float = Field(ge=0, le=100)
-    limit: int = Field(ge=1, le=100)
+    limit: int = Field(ge=1, le=200)
 
     @field_validator("geometry")
     @classmethod
