@@ -1,4 +1,4 @@
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 ARG VITE_API_URL=http://localhost:8000/api/v1
 ARG VITE_CESIUM_ION_TOKEN=
