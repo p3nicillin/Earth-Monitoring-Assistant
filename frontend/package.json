@@ -18,7 +18,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-map-gl": "8.1.1",
-    "recharts": "3.9.1",
+    "recharts": "3.9.2",
     "satellite.js": "7.0.1"
   },
   "devDependencies": {
